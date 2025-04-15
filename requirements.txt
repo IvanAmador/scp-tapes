@@ -1,0 +1,31 @@
+# requirements.txt
+
+# Core video/audio editing library
+moviepy>=1.0.3
+
+# OpenAI API client for TTS and STT (subtitles)
+openai>=1.0.0
+
+# Image manipulation library (used by moviepy, utils, intro, subtitles)
+Pillow>=9.0.0
+
+# Numerical operations (fundamental for image/video processing)
+numpy>=1.20.0
+
+# Reading .env files (for API keys primarily in config.py)
+python-dotenv>=0.19.0
+
+# SVG to PNG conversion (for logo in utils.py)
+# Requires system dependencies like Cairo and Pango - see library docs
+cairosvg>=2.5.0
+
+# Python bindings for Cairo graphics library (often needed by cairosvg)
+# Installation might require development headers (e.g., libcairo2-dev on Debian/Ubuntu)
+cairocffi>=1.2.0
+
+# Computer Vision library (used in gen_bg_glitched.py for image loading/effects)
+# You might prefer opencv-python-headless if you don't need GUI features
+opencv-python>=4.5.0
+
+# Optional: For improved progress bars with MoviePy/ffmpeg
+# tqdm>=4.60.0
