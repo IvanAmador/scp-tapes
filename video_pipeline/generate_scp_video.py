@@ -74,6 +74,8 @@ def main(script_path: Path):
         return
 
     print(f"--- Iniciando Geração (Glitch BG) para: {script_path.name} ---")
+    if hasattr(config, 'DEV_MODE') and config.DEV_MODE:
+        print("⚠️ MODO DEV ATIVADO - Gerando vídeo de teste com duração reduzida e renderização rápida")
 
     # 1. Ler Script e Extrair Informações
     print("1. Lendo script...")
@@ -95,6 +97,12 @@ def main(script_path: Path):
     background_video_output_path = scp_output_dir / config.ARTIFACT_BACKGROUND
     subtitles_data_path = scp_output_dir / config.ARTIFACT_SUBTITLES_DATA
     final_video_output_path = scp_output_dir / config.ARTIFACT_FINAL_VIDEO
+    
+    # Adiciona sufixo ao vídeo final se estiver em modo dev
+    if hasattr(config, 'DEV_MODE') and config.DEV_MODE:
+        dev_suffix = "_dev"
+        final_video_output_path = final_video_output_path.with_stem(final_video_output_path.stem + dev_suffix)
+        print(f"Vídeo final em modo dev será salvo como: {final_video_output_path.name}")
 
     # Verifica se o vídeo final já existe
     if final_video_output_path.exists():
@@ -129,6 +137,12 @@ def main(script_path: Path):
         narration_clip_temp.close() 
         if narration_duration <= 0: raise ValueError("Duração da narração inválida.")
         print(f"Duração da narração: {narration_duration:.2f}s")
+        
+        # Limita a duração da narração no modo dev
+        if hasattr(config, 'DEV_MODE') and config.DEV_MODE and hasattr(config, 'DEV_MODE_VIDEO_DURATION'):
+            if narration_duration > config.DEV_MODE_VIDEO_DURATION:
+                print(f"⚠️ Modo DEV: Limitando duração da narração de {narration_duration:.2f}s para {config.DEV_MODE_VIDEO_DURATION}s")
+                narration_duration = config.DEV_MODE_VIDEO_DURATION
 
         # 3. Gerar Background Glitchy ou usar existente
         print("\n3. Processando Background Glitchy...")
@@ -167,6 +181,20 @@ def main(script_path: Path):
                 except Exception as e:
                     print(f"Erro ao salvar timestamps: {e}")
         
+        # Em modo dev, limita os timestamps à duração dev configurada
+        if hasattr(config, 'DEV_MODE') and config.DEV_MODE and hasattr(config, 'DEV_MODE_VIDEO_DURATION'):
+            if word_timestamps:
+                filtered_timestamps = []
+                for word in word_timestamps:
+                    if word.get('start', 0) < config.DEV_MODE_VIDEO_DURATION:
+                        # Ajusta o tempo final se necessário
+                        if word.get('end', 0) > config.DEV_MODE_VIDEO_DURATION:
+                            word['end'] = config.DEV_MODE_VIDEO_DURATION
+                        filtered_timestamps.append(word)
+                
+                print(f"⚠️ Modo DEV: Filtrados {len(filtered_timestamps)} de {len(word_timestamps)} timestamps para caber na duração dev")
+                word_timestamps = filtered_timestamps
+        
         if word_timestamps is None:
             print("Aviso: Falha ao obter timestamps. Vídeo sem legendas.")
             subtitle_clips = []
@@ -194,7 +222,8 @@ def main(script_path: Path):
         total_time_taken = end_total_time - start_total_time
 
         if success:
-            print(f"\n--- Geração para {scp_number} CONCLUÍDA! ({total_time_taken:.2f}s) ---")
+            mode_indicator = "[DEV MODE]" if hasattr(config, 'DEV_MODE') and config.DEV_MODE else ""
+            print(f"\n--- Geração para {scp_number} CONCLUÍDA! {mode_indicator} ({total_time_taken:.2f}s) ---")
             print(f"Todos os artefatos foram salvos em: {scp_output_dir}")
             print(f"Narração: {narration_output_path}")
             print(f"Vídeo de fundo: {background_video_output_path}")

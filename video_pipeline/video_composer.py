@@ -8,6 +8,31 @@ from pathlib import Path
 import config
 import time
 
+def get_dev_mode_duration(audio_clip, default_duration=None):
+    """
+    Retorna a duração limitada pelo modo dev, se aplicável.
+    
+    Args:
+        audio_clip: Clipe de áudio cujo tempo queremos limitar
+        default_duration: Duração padrão para usar se o clipe for None
+        
+    Returns:
+        Duração ajustada conforme modo dev ou duração original
+    """
+    if audio_clip is None and default_duration is None:
+        return 0.0
+        
+    duration = audio_clip.duration if audio_clip is not None else default_duration
+    
+    # Verifica se estamos em modo dev
+    if hasattr(config, 'DEV_MODE') and config.DEV_MODE and hasattr(config, 'DEV_MODE_VIDEO_DURATION'):
+        max_duration = config.DEV_MODE_VIDEO_DURATION
+        if duration > max_duration:
+            print(f"⚠️ Modo DEV: Limitando duração do áudio de {duration:.2f}s para {max_duration}s")
+            return max_duration
+    
+    return duration
+
 def assemble_video(intro_clip: CompositeVideoClip, background_video_path: Path,
                    narration_path: Path, subtitle_clips: List[Union[ImageClip, CompositeVideoClip]],
                    output_path: Path) -> bool:
@@ -35,7 +60,20 @@ def assemble_video(intro_clip: CompositeVideoClip, background_video_path: Path,
         if not narration_path.exists(): raise FileNotFoundError(f"Narração não encontrada: {narration_path}")
         narration_audio = AudioFileClip(str(narration_path))
         clips_to_close.append(narration_audio) # Adiciona para fechar
-        content_duration = narration_audio.duration
+        
+        # Verifica limitação de duração em modo dev
+        original_duration = narration_audio.duration
+        content_duration = get_dev_mode_duration(narration_audio)
+        
+        # Se houve limitação, cria um subclip
+        if content_duration < original_duration:
+            narration_audio_original = narration_audio  # Guarda referência
+            clips_to_close.append(narration_audio_original)  # Garante que original será fechado
+            narration_audio = narration_audio.subclip(0, content_duration)
+            clips_to_close.append(narration_audio)  # Adiciona o subclip também
+        else:
+            content_duration = original_duration
+            
         print(f"Duração da narração: {content_duration:.2f}s")
         total_duration_calc = intro_clip.duration + content_duration
         max_allowed_duration = config.MAX_VIDEO_DURATION_SECONDS

@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- Dev Mode ---
+DEV_MODE = True  # Set to True for faster rendering with shorter videos
+DEV_MODE_VIDEO_DURATION = 10  # Duration of content part in seconds when in dev mode
+
 # --- OpenAI API ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "SUA_API_KEY_AQUI_SE_NAO_USAR_VAR_AMBIENTE")
 # ... (avisos sobre chave) ...
@@ -39,7 +43,7 @@ SCP_LOGO_FILE = Path(__file__).resolve().parent / "assets" / "svg" / "scp_logo.w
 
 # --- Arquivos de Fonte ---
 # ... (igual) ...
-FONT_INTRO = "Arial-Bold"
+FONT_INTRO = str(FONT_DIR / "typewriter.ttf")
 FONT_SUBTITLE = str(FONT_DIR / "typewriter.ttf")
 
 # --- Configurações de Vídeo ---
@@ -48,7 +52,7 @@ VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 VIDEO_FPS = 30
 VIDEO_SIZE = (VIDEO_WIDTH, VIDEO_HEIGHT)
-MAX_VIDEO_DURATION_SECONDS = 180
+MAX_VIDEO_DURATION_SECONDS = 180 if not DEV_MODE else 10  # Ajustado para dev mode
 
 # --- Configurações de Logo ---
 USE_LOGO_IN_INTRO = True
@@ -71,7 +75,7 @@ TTS_VOICE = "onyx"
 STT_MODEL = "whisper-1"
 
 # --- Configurações da Intro ---
-INTRO_DURATION = 7  # Aumentado para dar mais tempo para a intro
+INTRO_DURATION = 5 if DEV_MODE else 7  # Reduzido para 5 segundos no dev mode
 INTRO_FONT_SIZE_NUMBER = 130  # Código SCP maior
 INTRO_FONT_SIZE_NAME = 100  # Nome do SCP
 INTRO_FONT_SIZE_CLASS = 90  # Classe
@@ -95,16 +99,30 @@ SUBTITLE_PADDING = 20  # Aumentado para melhor espaçamento
 SUBTITLE_MODE = 'phrase'  # Mantém o modo de frase
 
 # --- Configurações de Renderização (MoviePy) ---
-# ... (igual) ...
-VIDEO_CODEC = "libx264"
-AUDIO_CODEC = "aac"
-VIDEO_PRESET = "medium"
-VIDEO_THREADS = os.cpu_count() or 4
-VIDEO_CRF = "23"
+# Configurações normais (não dev mode)
+VIDEO_CODEC_NORMAL = "libx264"
+AUDIO_CODEC_NORMAL = "aac"
+VIDEO_PRESET_NORMAL = "medium"
+VIDEO_THREADS_NORMAL = os.cpu_count() or 4
+VIDEO_CRF_NORMAL = "23"
+
+# Configurações dev mode (rápido, menor qualidade)
+VIDEO_CODEC_DEV = "libx264"
+AUDIO_CODEC_DEV = "aac"
+VIDEO_PRESET_DEV = "ultrafast"
+VIDEO_THREADS_DEV = os.cpu_count() or 4
+VIDEO_CRF_DEV = "28"  # Valor maior = menor qualidade = mais rápido
+
+# Seleciona configurações baseadas no modo
+VIDEO_CODEC = VIDEO_CODEC_DEV if DEV_MODE else VIDEO_CODEC_NORMAL
+AUDIO_CODEC = AUDIO_CODEC_DEV if DEV_MODE else AUDIO_CODEC_NORMAL
+VIDEO_PRESET = VIDEO_PRESET_DEV if DEV_MODE else VIDEO_PRESET_NORMAL
+VIDEO_THREADS = VIDEO_THREADS_DEV if DEV_MODE else VIDEO_THREADS_NORMAL
+VIDEO_CRF = VIDEO_CRF_DEV if DEV_MODE else VIDEO_CRF_NORMAL
 
 # --- Configurações de Áudio de Fundo ---
 BG_MUSIC_FILE = Path(__file__).resolve().parent / "assets" / "bg-sound" / "bg-sound.wav"
 USE_BG_MUSIC = True
 BG_MUSIC_VOLUME = 0.8  # 80% do volume da narração
 
-print("Configurações carregadas.")
+print(f"Configurações carregadas. {'MODO DEV ATIVADO - Renderização rápida' if DEV_MODE else 'Modo normal'}")
