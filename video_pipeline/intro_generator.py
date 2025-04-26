@@ -11,16 +11,20 @@ import time
 from typing import Tuple
 import config
 
+# !! ADICIONADO AVISO SOBRE WEBP !!
+print("AVISO: O carregamento direto de WebP no intro_generator depende da instalação da biblioteca 'libwebp' e do suporte do Pillow.")
+
 def create_intro(scp_number: str, scp_name: str, scp_class: str, background_video_path: Path | None = None) -> Tuple[CompositeVideoClip | ColorClip, float]:
     """
     Cria a introdução com imagem de fundo, texto digitando em duas linhas (SCP# e Nome),
     som sincronizado e duração adaptável com pausas.
+    Tenta adicionar logo .webp se configurado.
     IGNORA o background_video_path passado.
 
     Returns:
         Tupla (clipe_intro, duracao_intro_segundos).
     """
-    print("--- Iniciando criação da intro (2 Linhas, Adaptável, Som) ---")
+    print("--- Iniciando criação da intro (2 Linhas, Adaptável, Som, Logo WebP?) ---")
     start_time_intro = time.time()
 
     # --- Parâmetros e Caminhos ---
@@ -28,6 +32,7 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
     bg_img_path = project_root / "assets" / "img" / "intro-bg.png"
     font_path_intro = Path(config.FONT_INTRO) # Fonte específica da intro
     type_sound_dir = project_root / "assets" / "type-sound"
+    logo_path = config.SCP_LOGO_FILE # Usa o caminho do WebP diretamente
 
     video_size = config.VIDEO_SIZE
     fps = config.VIDEO_FPS
@@ -65,6 +70,8 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
     fallback_duration = 5.0
     final_audio_array = None
     memo_fonts = {} # Cache para ambas as fontes
+    logo_intro_clip = None # Para o clipe da logo da intro
+    temp_logo_intro_base = None # Para fechar o clipe base da logo
 
     try:
         # --- Carregar Fundo (igual a antes) ---
@@ -72,49 +79,56 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
             print(f"AVISO: Imagem de fundo '{bg_img_path.name}' não encontrada. Usando cor sólida.")
             bg_clip = ColorClip(size=video_size, color=config.INTRO_BACKGROUND_COLOR, duration=total_duration).set_fps(fps)
         else:
-            # ... (código de carregamento, redimensionamento/corte do bg_clip como antes) ...
             print(f"Carregando imagem de fundo: {bg_img_path.name}")
-            with ImageClip(str(bg_img_path), ismask=False, transparent=True) as temp_bg_imgclip:
-                temp_bg_duration_set = temp_bg_imgclip.set_duration(total_duration)
-                clips_to_close.append(temp_bg_duration_set)
-                if temp_bg_duration_set.size != video_size:
-                    print(f"Redimensionando/cortando fundo de {temp_bg_duration_set.size} para {video_size}")
-                    bg_processed = temp_bg_duration_set.resize(height=video_size[1])
-                    if bg_processed.w < video_size[0]:
-                        bg_processed.close(); bg_processed = temp_bg_duration_set.resize(width=video_size[0])
-                    bg_clip = bg_processed.crop(x_center=bg_processed.w / 2, y_center=bg_processed.h / 2, width=video_size[0], height=video_size[1])
-                    clips_to_close.append(bg_clip)
+            # Usando 'with' garante o fechamento do ImageClip temporário
+            with ImageClip(str(bg_img_path)) as temp_bg_imgclip:
+                # Ajuste de tamanho/crop (igual ao código original)
+                bg_clip_resized = temp_bg_imgclip
+                if temp_bg_imgclip.size != video_size:
+                    print(f"Redimensionando/cortando fundo de {temp_bg_imgclip.size} para {video_size}")
+                    bg_clip_resized = temp_bg_imgclip.resize(height=video_size[1])
+                    if bg_clip_resized.w < video_size[0]:
+                         bg_clip_resized.close() # Fecha intermediário
+                         bg_clip_resized = temp_bg_imgclip.resize(width=video_size[0])
+                    # Realiza o crop no clipe redimensionado
+                    bg_clip_cropped = bg_clip_resized.crop(
+                        x_center=bg_clip_resized.w / 2, y_center=bg_clip_resized.h / 2,
+                        width=video_size[0], height=video_size[1]
+                    )
+                    bg_clip = bg_clip_cropped # O clipe final para uso é o cortado
+                    if bg_clip_resized is not temp_bg_imgclip: # Se houve redimensionamento
+                        clips_to_close.append(bg_clip_resized) # Adiciona redimensionado para fechar
                 else:
-                    bg_clip = temp_bg_duration_set.copy(); clips_to_close.append(bg_clip)
+                     bg_clip = temp_bg_imgclip.copy() # Copia se o tamanho já estava certo
+
+                # Define duração e FPS no clipe final de fundo
+                bg_clip = bg_clip.set_duration(total_duration).set_fps(fps)
+                clips_to_close.append(bg_clip) # Adiciona o bg_clip final para fechar
+
             if bg_clip is None: raise ValueError("Falha ao processar bg_clip.")
-            bg_clip = bg_clip.set_fps(fps); print(f"Clipe de fundo processado: Duração={bg_clip.duration:.2f}s")
+            print(f"Clipe de fundo processado: Duração={bg_clip.duration:.2f}s")
 
 
         # --- Carregar Sons (igual a antes) ---
         type_sounds = []
-        # ... (código para carregar sons em type_sounds e adicioná-los a clips_to_close) ...
         if type_sound_dir.is_dir():
             for sound_file in type_sound_dir.glob("type-*.wav"):
                 try:
                     audio_clip = AudioFileClip(str(sound_file))
                     if audio_clip and audio_clip.duration > 0:
-                         type_sounds.append(audio_clip); clips_to_close.append(audio_clip)
+                        type_sounds.append(audio_clip); clips_to_close.append(audio_clip)
                     elif audio_clip: audio_clip.close()
                 except Exception as e: print(f"Aviso: Falha ao carregar som '{sound_file.name}': {e}")
             print(f"Carregados {len(type_sounds)} sons de digitação válidos.")
         else: print(f"Aviso: Diretório de sons '{type_sound_dir}' não encontrado.")
 
 
-        # --- Efeito de Digitação Visual (2 Linhas) ---
+        # --- Efeito de Digitação Visual (2 Linhas - igual a antes) ---
         typing_start_time = pause_start_sec
-        # Tempo para digitar a primeira linha
         typing_duration_line1 = num_chars1 * typing_speed
-        # Tempo para digitar a segunda linha (começa após a primeira)
         typing_duration_line2 = num_chars2 * typing_speed
-        # Tempo total de digitação (sem pausas entre linhas por enquanto)
         typing_total_active_time = typing_duration_line1 + typing_duration_line2
 
-        # Função para carregar fontes com cache
         def get_font(size):
             key = (font_path_intro, size)
             font = memo_fonts.get(key)
@@ -127,76 +141,49 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
 
         font1 = get_font(font_size1)
         font2 = get_font(font_size2)
-        # Calcula a altura da primeira linha para posicionar a segunda
         try:
-            # Usa textbbox para obter a altura real da fonte renderizada
-            line1_bbox = font1.getbbox("A") # Bbox de um caractere alto
-            line1_height = line1_bbox[3] - line1_bbox[1] if line1_bbox else font_size1 # Fallback para font_size
-        except Exception:
-             line1_height = font_size1 # Fallback mais simples
-
-        line2_pos = (line1_pos[0], line1_pos[1] + line1_height + line_spacing) # Pos X igual, Y abaixo
+            line1_bbox = font1.getbbox("A")
+            line1_height = line1_bbox[3] - line1_bbox[1] if line1_bbox else font_size1
+        except Exception: line1_height = font_size1
+        line2_pos = (line1_pos[0], line1_pos[1] + line1_height + line_spacing)
 
         def make_frame_visual(t):
             img_txt = Image.new("RGBA", video_size, (0, 0, 0, 0))
             draw = ImageDraw.Draw(img_txt)
-
-            # Tempo relativo desde o início da digitação (após pausa inicial)
             time_since_typing_start = max(0, t - typing_start_time)
-
-            # Calcula quantos caracteres mostrar na linha 1
             chars1_float = time_since_typing_start / typing_speed
             chars1 = min(num_chars1, math.floor(chars1_float))
-
-            # Calcula quantos caracteres mostrar na linha 2 (só começa após linha 1)
             time_for_line2 = max(0, time_since_typing_start - typing_duration_line1)
             chars2_float = time_for_line2 / typing_speed
             chars2 = min(num_chars2, math.floor(chars2_float))
-
-            # Texto a exibir
             display_text1 = text_line1[:chars1]
             display_text2 = text_line2[:chars2]
-
-            # Lógica do cursor
             cursor = " "
             total_chars_shown = chars1 + chars2
-            # Mostra cursor se não terminou de digitar TUDO e durante a digitação ativa
-            if total_chars_shown < total_chars and t >= typing_start_time and t < (typing_start_time + typing_total_active_time + 0.1): # 0.1s margem
+            if total_chars_shown < total_chars and t >= typing_start_time and t < (typing_start_time + typing_total_active_time + 0.1):
                 cursor = "|" if math.floor(t * 2) % 2 == 0 else " "
-            # Mostra cursor piscando também na pausa inicial
             elif t < typing_start_time:
                  cursor = "|" if math.floor(t * 2) % 2 == 0 else " "
-
-
-            # Desenha linha 1 (com cursor se for a linha ativa)
             cursor1 = cursor if chars1 < num_chars1 else " "
             draw.text(line1_pos, display_text1 + cursor1, font=font1, fill=text_color)
-
-            # Desenha linha 2 (com cursor se for a linha ativa)
             cursor2 = cursor if chars1 == num_chars1 and chars2 < num_chars2 else " "
             draw.text(line2_pos, display_text2 + cursor2, font=font2, fill=text_color)
-
-            # Converte para RGB
-            img_rgb = img_txt.convert("RGB")
+            img_rgb = img_txt.convert("RGB") # Converte para RGB para VideoClip padrão
             return np.array(img_rgb)
 
         print("Criando clipe visual da digitação (2 linhas)...")
         text_clip_visual = VideoClip(make_frame_visual, duration=total_duration).set_fps(fps)
         clips_to_close.append(text_clip_visual)
 
-        # --- Geração de Áudio Antecipada (2 Linhas) ---
+        # --- Geração de Áudio Antecipada (2 Linhas - igual a antes) ---
         if type_sounds:
             print("Gerando áudio completo da digitação (2 linhas)...")
             audio_fps = 44100
             num_audio_frames = int(total_duration * audio_fps)
             accumulated_audio = np.zeros((num_audio_frames, 2), dtype=np.float32)
-
-            # Tempos de pressionar tecla para linha 1
             char_press_times1 = [typing_start_time + (i * typing_speed) for i in range(num_chars1)]
-            # Tempos de pressionar tecla para linha 2 (começa depois da linha 1)
             start_time_line2 = typing_start_time + typing_duration_line1
             char_press_times2 = [start_time_line2 + (i * typing_speed) for i in range(num_chars2)]
-
             all_press_times = sorted(char_press_times1 + char_press_times2)
 
             for press_time in all_press_times:
@@ -227,19 +214,51 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
             text_clip_audio = AudioClip(get_audio_frame, duration=total_duration, fps=audio_fps)
             clips_to_close.append(text_clip_audio)
 
+        # --- *** NOVO: Adicionar Logo na Intro (se configurado) *** ---
+        intro_elements = [bg_clip, text_clip_visual] # Começa com fundo e texto
+        if config.USE_LOGO_IN_INTRO:
+            if logo_path.exists():
+                try:
+                    print(f"Tentando carregar logo WebP para intro: {logo_path.name}")
+                    logo_width_intro = int(config.VIDEO_WIDTH * config.LOGO_SIZE_FACTOR_INTRO)
+
+                    # Carrega WebP diretamente - definindo ismask=False para transparência
+                    temp_logo_intro_base = ImageClip(str(logo_path), ismask=False, transparent=True)
+                    clips_to_close.append(temp_logo_intro_base) # Adiciona base para fechar
+
+                    logo_intro_clip = (temp_logo_intro_base
+                                       .resize(width=logo_width_intro)
+                                       .set_duration(total_duration) # Logo dura toda a intro
+                                       .set_position(config.LOGO_POSITION_INTRO)
+                                       .margin(left=config.LOGO_MARGIN_INTRO, right=config.LOGO_MARGIN_INTRO,
+                                               top=config.LOGO_MARGIN_INTRO, bottom=config.LOGO_MARGIN_INTRO, opacity=0) # Margem transparente
+                                       .set_fps(fps))
+
+                    intro_elements.append(logo_intro_clip) # Adiciona logo aos elementos da composição
+                    print("Logo adicionado à intro.")
+                except Exception as e:
+                    print(f"AVISO: Falha ao carregar ou processar logo WebP para intro: {e}")
+                    print("       Verifique se 'libwebp' está instalado e o Pillow o suporta.")
+                    # Limpa ref base se falhou após criar
+                    if temp_logo_intro_base and temp_logo_intro_base in clips_to_close:
+                        clips_to_close.remove(temp_logo_intro_base)
+                        if hasattr(temp_logo_intro_base, 'close'): temp_logo_intro_base.close()
+            else:
+                 print(f"Aviso: Logo para intro habilitado, mas arquivo não encontrado: {logo_path}")
+
         # --- Composição Final ---
         print("Compondo clipe final da intro...")
         if not bg_clip or not hasattr(bg_clip, 'get_frame'): raise ValueError("BG inválido.")
         if not text_clip_visual or not hasattr(text_clip_visual, 'get_frame'): raise ValueError("Texto visual inválido.")
 
-        final_clip = CompositeVideoClip([bg_clip, text_clip_visual], size=video_size, use_bgclip=True)
+        # Usa intro_elements que agora contém [bg, texto, logo(opcional)]
+        final_clip = CompositeVideoClip(intro_elements, size=video_size, use_bgclip=True)
 
         if text_clip_audio:
             final_clip = final_clip.set_audio(text_clip_audio)
             print("Áudio da digitação anexado.")
         else:
              print("AVISO: Clipe de áudio da digitação não foi criado ou anexado.")
-
 
         final_clip = final_clip.set_duration(total_duration).set_fps(fps)
 
@@ -266,9 +285,11 @@ def create_intro(scp_number: str, scp_name: str, scp_class: str, background_vide
     finally:
         print("Fechando clipes intermediários da intro...")
         closed_count = 0
-        # ... (código de fechamento como antes) ...
-        for clip in clips_to_close:
+        # Itera em cópia para poder remover durante iteração se necessário
+        for clip in list(clips_to_close):
              if clip and hasattr(clip, 'close'):
-                 try: clip.close(); closed_count += 1
-                 except Exception: pass
+                 try:
+                     clip.close(); closed_count += 1
+                 except Exception as close_err:
+                      print(f"Erro menor ao fechar clipe da intro: {close_err}")
         print(f"Tentativa de fechar {closed_count} clipes intermediários da intro.")
